@@ -17,6 +17,20 @@ servers:
 
 paths:
 
+  # ── Trap identity ────────────────────────────────────────────────────────────
+
+  /trap:
+    get:
+      summary: Get trap identity and location
+      operationId: getTrap
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrapInfo"
+
   # ── Status ──────────────────────────────────────────────────────────────────
 
   /status:
@@ -196,6 +210,21 @@ components:
             $ref: "#/components/schemas/Error"
 
   schemas:
+
+    # ── Trap identity ──────────────────────────────────────────────────────────
+
+    TrapInfo:
+      type: object
+      required: [id, location]
+      properties:
+        id:
+          type: string
+          description: Unique trap identifier
+          example: trap_001
+        location:
+          type: string
+          description: Human-readable location description
+          example: "Garden shed, north wall"
 
     # ── Status ─────────────────────────────────────────────────────────────────
 
