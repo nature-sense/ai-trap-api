@@ -31,6 +31,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/TrapInfo"
 
+  # ── Capture control ──────────────────────────────────────────────────────────
+
+  /capture:
+    get:
+      summary: Get current detection state
+      operationId: getCapture
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+
+    post:
+      summary: Start or stop detection (MJPEG stream always runs)
+      operationId: postCapture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaptureState"
+      responses:
+        "200":
+          description: Updated state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+
   # ── Status ──────────────────────────────────────────────────────────────────
 
   /status:
@@ -226,12 +257,25 @@ components:
           description: Human-readable location description
           example: "Garden shed, north wall"
 
+    # ── Capture state ──────────────────────────────────────────────────────────
+
+    CaptureState:
+      type: object
+      required: [active]
+      properties:
+        active:
+          type: boolean
+          description: Whether detection (inference/tracking/saving) is running
+
     # ── Status ─────────────────────────────────────────────────────────────────
 
     Status:
       type: object
-      required: [uptime_s, fps, db_rows, db_size_bytes, stream_port]
+      required: [uptime_s, fps, db_rows, db_size_bytes, stream_port, capturing]
       properties:
+        capturing:
+          type: boolean
+          description: Whether detection is currently active
         uptime_s:
           type: integer
           description: Seconds since process start
