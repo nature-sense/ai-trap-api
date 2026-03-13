@@ -1,0 +1,335 @@
+openapi: "3.1.0"
+
+info:
+  title: Insect Trap API
+  version: "1.0.0"
+  description: REST API for the yolo-trap insect detection system
+
+servers:
+  - url: http://{host}:8080
+    variables:
+      host:
+        default: trap.local
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Paths
+# ─────────────────────────────────────────────────────────────────────────────
+
+paths:
+
+  # ── Status ──────────────────────────────────────────────────────────────────
+
+  /status:
+    get:
+      summary: System health and runtime stats
+      operationId: getStatus
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  # ── Config ──────────────────────────────────────────────────────────────────
+
+  /config:
+    get:
+      summary: Get active configuration
+      operationId: getConfig
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+
+    put:
+      summary: Update configuration (partial update supported)
+      operationId: putConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Config"
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ── Detections ───────────────────────────────────────────────────────────────
+
+  /detections:
+    get:
+      summary: Query detection history
+      operationId: getDetections
+      parameters:
+        - name: from
+          in: query
+          description: Start of time range (Unix µs)
+          schema:
+            type: integer
+            format: int64
+        - name: to
+          in: query
+          description: End of time range (Unix µs)
+          schema:
+            type: integer
+            format: int64
+        - name: class_id
+          in: query
+          schema:
+            type: integer
+        - name: track_id
+          in: query
+          schema:
+            type: integer
+        - name: min_confidence
+          in: query
+          schema:
+            type: number
+            format: float
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetectionPage"
+
+  /detections/{trackId}:
+    get:
+      summary: Get all detections for a single track
+      operationId: getTrack
+      parameters:
+        - name: trackId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Detection"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Crops ────────────────────────────────────────────────────────────────────
+
+  /crops/{trackId}:
+    get:
+      summary: Get the best saved crop image for a track
+      operationId: getCrop
+      parameters:
+        - name: trackId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: JPEG image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Stream ───────────────────────────────────────────────────────────────────
+
+  /stream:
+    get:
+      summary: Redirect to live MJPEG stream
+      operationId: getStream
+      responses:
+        "302":
+          description: Redirect to MJPEG stream URL
+          headers:
+            Location:
+              schema:
+                type: string
+                example: "http://trap.local:9000/stream"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Components
+# ─────────────────────────────────────────────────────────────────────────────
+
+components:
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: Invalid request body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+
+    # ── Status ─────────────────────────────────────────────────────────────────
+
+    Status:
+      type: object
+      required: [uptime_s, fps, db_rows, db_size_bytes, stream_port]
+      properties:
+        uptime_s:
+          type: integer
+          description: Seconds since process start
+        fps:
+          type: number
+          format: float
+          description: Current capture framerate
+        db_rows:
+          type: integer
+          format: int64
+          description: Total detection rows in database
+        db_size_bytes:
+          type: integer
+          format: int64
+        stream_port:
+          type: integer
+          description: Port of the MJPEG stream
+        model:
+          type: string
+          description: Model filename in use
+
+    # ── Config ─────────────────────────────────────────────────────────────────
+
+    Config:
+      type: object
+      properties:
+        detection:
+          type: object
+          properties:
+            conf_threshold:
+              type: number
+              format: float
+            nms_threshold:
+              type: number
+              format: float
+        tracker:
+          type: object
+          properties:
+            high_threshold:
+              type: number
+              format: float
+            low_threshold:
+              type: number
+              format: float
+            iou_threshold:
+              type: number
+              format: float
+            min_hits:
+              type: integer
+            max_missed:
+              type: integer
+        crops:
+          type: object
+          properties:
+            min_confidence:
+              type: number
+              format: float
+            jpeg_quality:
+              type: integer
+        stream:
+          type: object
+          properties:
+            jpeg_quality:
+              type: integer
+
+    # ── Detection ──────────────────────────────────────────────────────────────
+
+    Detection:
+      type: object
+      required: [frame_id, timestamp_us, track_id, class_id, label,
+                 x1, y1, x2, y2, confidence, frame_width, frame_height]
+      properties:
+        frame_id:
+          type: integer
+          format: int64
+        timestamp_us:
+          type: integer
+          format: int64
+          description: Unix timestamp in microseconds
+        track_id:
+          type: integer
+        class_id:
+          type: integer
+        label:
+          type: string
+        x1:
+          type: number
+          format: float
+        y1:
+          type: number
+          format: float
+        x2:
+          type: number
+          format: float
+        y2:
+          type: number
+          format: float
+        confidence:
+          type: number
+          format: float
+        frame_width:
+          type: integer
+        frame_height:
+          type: integer
+
+    DetectionPage:
+      type: object
+      required: [total, offset, limit, items]
+      properties:
+        total:
+          type: integer
+          format: int64
+          description: Total matching rows (for pagination)
+        offset:
+          type: integer
+        limit:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Detection"
+
+    # ── Error ──────────────────────────────────────────────────────────────────
+
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
