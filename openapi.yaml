@@ -439,6 +439,24 @@ components:
           type: string
           description: Capture session ID that produced this crop
           example: "20260314_153042"
+        temperatureC:
+          type: number
+          format: float
+          nullable: true
+          description: Ambient temperature in °C at time of save. Null if no sensor fitted.
+          example: 18.4
+        humidityPct:
+          type: number
+          format: float
+          nullable: true
+          description: Relative humidity in % at time of save. Null if no sensor fitted.
+          example: 72.1
+        pressureHpa:
+          type: number
+          format: float
+          nullable: true
+          description: Atmospheric pressure in hPa at time of save. Null if no sensor fitted.
+          example: 1013.25
 
     # ── Sync ───────────────────────────────────────────────────────────────────
 
@@ -490,6 +508,21 @@ components:
         timestampUs:
           type: integer
           format: int64
+        temperatureC:
+          type: number
+          format: float
+          nullable: true
+          description: Ambient temperature in °C at time of save. Null if no sensor fitted.
+        humidityPct:
+          type: number
+          format: float
+          nullable: true
+          description: Relative humidity in % at time of save. Null if no sensor fitted.
+        pressureHpa:
+          type: number
+          format: float
+          nullable: true
+          description: Atmospheric pressure in hPa at time of save. Null if no sensor fitted.
 
     SyncAck:
       type: object
