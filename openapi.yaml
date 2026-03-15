@@ -2,7 +2,7 @@ openapi: "3.1.0"
 
 info:
   title: Insect Trap API
-  version: "1.0.0"
+  version: "2.0.0"
   description: REST API for the yolo-trap insect detection system
 
 servers:
@@ -19,7 +19,7 @@ paths:
 
   # ── Trap identity ────────────────────────────────────────────────────────────
 
-  /trap:
+  /api/trap:
     get:
       summary: Get trap identity and location
       operationId: getTrap
@@ -33,9 +33,9 @@ paths:
 
   # ── Capture control ──────────────────────────────────────────────────────────
 
-  /capture:
+  /api/capture:
     get:
-      summary: Get current detection state
+      summary: Get current detection state and active session ID
       operationId: getCapture
       responses:
         "200":
@@ -53,18 +53,25 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CaptureState"
+              type: object
+              required: [active]
+              properties:
+                active:
+                  type: boolean
       responses:
         "200":
           description: Updated state
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CaptureState"
+                type: object
+                properties:
+                  active:
+                    type: boolean
 
   # ── Status ──────────────────────────────────────────────────────────────────
 
-  /status:
+  /api/status:
     get:
       summary: System health and runtime stats
       operationId: getStatus
@@ -76,124 +83,52 @@ paths:
               schema:
                 $ref: "#/components/schemas/Status"
 
-  # ── Config ──────────────────────────────────────────────────────────────────
+  # ── SSE events ──────────────────────────────────────────────────────────────
 
-  /config:
+  /api/events:
     get:
-      summary: Get active configuration
-      operationId: getConfig
+      summary: Redirect to SSE event stream (detection events, crop saved, etc.)
+      operationId: getEvents
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
+        "307":
+          description: Temporary redirect to SSE server
+          headers:
+            Location:
               schema:
-                $ref: "#/components/schemas/Config"
+                type: string
+                example: "http://192.168.5.1:8081/api/events"
 
-    put:
-      summary: Update configuration (partial update supported)
-      operationId: putConfig
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/Config"
-      responses:
-        "200":
-          description: Updated config
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Config"
-        "400":
-          $ref: "#/components/responses/BadRequest"
+  # ── Crops ────────────────────────────────────────────────────────────────────
 
-  # ── Detections ───────────────────────────────────────────────────────────────
-
-  /detections:
+  /api/crops:
     get:
-      summary: Query detection history
-      operationId: getDetections
-      parameters:
-        - name: from
-          in: query
-          description: Start of time range (Unix µs)
-          schema:
-            type: integer
-            format: int64
-        - name: to
-          in: query
-          description: End of time range (Unix µs)
-          schema:
-            type: integer
-            format: int64
-        - name: class_id
-          in: query
-          schema:
-            type: integer
-        - name: track_id
-          in: query
-          schema:
-            type: integer
-        - name: min_confidence
-          in: query
-          schema:
-            type: number
-            format: float
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 100
-            maximum: 1000
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
+      summary: List all saved crop images
+      operationId: getCrops
       responses:
         "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DetectionPage"
-
-  /detections/{trackId}:
-    get:
-      summary: Get all detections for a single track
-      operationId: getTrack
-      parameters:
-        - name: trackId
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: OK
+          description: Array of crop metadata records
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Detection"
-        "404":
-          $ref: "#/components/responses/NotFound"
+                  $ref: "#/components/schemas/CropItem"
 
-  # ── Crops ────────────────────────────────────────────────────────────────────
-
-  /crops/{trackId}:
+  /api/crops/{path}:
     get:
-      summary: Get the best saved crop image for a track
-      operationId: getCrop
+      summary: >
+        Serve a saved crop JPEG. Path is either a bare filename
+        ("insect_42.jpg") for legacy crops or a session-relative path
+        ("20260314_153042/insect_42.jpg") for session-scoped crops.
+        At most one subdirectory level is allowed; ".." is rejected.
+      operationId: getCropFile
       parameters:
-        - name: trackId
+        - name: path
           in: path
           required: true
           schema:
-            type: integer
+            type: string
+            example: "20260314_153042/insect_42.jpg"
       responses:
         "200":
           description: JPEG image
@@ -205,20 +140,158 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  # ── Stream ───────────────────────────────────────────────────────────────────
+  # ── Config mutations ─────────────────────────────────────────────────────────
 
-  /stream:
-    get:
-      summary: Redirect to live MJPEG stream
-      operationId: getStream
+  /api/config/location:
+    post:
+      summary: Set trap GPS location
+      operationId: postConfigLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon]
+              properties:
+                lat:
+                  type: number
+                  format: double
+                  example: 51.5074
+                lon:
+                  type: number
+                  format: double
+                  example: -0.1278
       responses:
-        "302":
-          description: Redirect to MJPEG stream URL
-          headers:
-            Location:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /api/config/threshold:
+    post:
+      summary: Set detection confidence threshold
+      operationId: postConfigThreshold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value:
+                  type: number
+                  format: float
+                  minimum: 0.0
+                  maximum: 1.0
+                  exclusiveMinimum: true
+                  exclusiveMaximum: true
+                  example: 0.45
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ── Autofocus ────────────────────────────────────────────────────────────────
+
+  /api/af/trigger:
+    post:
+      summary: Trigger a one-shot autofocus cycle
+      operationId: postAfTrigger
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  # ── Sync ─────────────────────────────────────────────────────────────────────
+  #
+  #  The sync protocol allows a companion app (phone / cloud gateway) to pull
+  #  unsynced crop files over HTTP without needing SSH or SCP.
+  #
+  #  Typical flow:
+  #    1.  POST /api/sync/session       → get sessionId + pending count
+  #    2.  GET  /api/sync/session/{id}  → get manifest (list of files + metadata)
+  #    3.  GET  /api/crops/{file}       → download each file
+  #    4.  POST /api/sync/ack           → mark files as synced
+  #    5.  DELETE /api/sync/session/{id}→ mark session done, optionally free disk
+
+  /api/sync/session:
+    post:
+      summary: Open a new sync session; returns count of pending (unsynced) crops
+      operationId: postSyncSession
+      responses:
+        "200":
+          description: Sync session opened
+          content:
+            application/json:
               schema:
-                type: string
-                example: "http://trap.local:9000/stream"
+                $ref: "#/components/schemas/SyncSessionOpened"
+        "503":
+          description: Sync manager unavailable
+
+  /api/sync/session/{id}:
+    get:
+      summary: Get manifest of unsynced crops for a sync session
+      operationId: getSyncSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "sess_20260314_153042"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncManifest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      summary: Close sync session and optionally delete synced files from disk
+      operationId: deleteSyncSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncDeleteResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/sync/ack:
+    post:
+      summary: Acknowledge that a set of files have been successfully received
+      operationId: postSyncAck
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncAck"
+      responses:
+        "200":
+          description: Number of rows marked synced
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  acked:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "503":
+          description: Sync manager unavailable
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Components
@@ -239,6 +312,16 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    Ok:
+      description: Success
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: ok
 
   schemas:
 
@@ -266,16 +349,36 @@ components:
         active:
           type: boolean
           description: Whether detection (inference/tracking/saving) is running
+        sessionId:
+          type: string
+          nullable: true
+          description: >
+            ID of the current capture session (YYYYMMDD_HHMMSS format).
+            null when not capturing.
+          example: "20260314_153042"
 
     # ── Status ─────────────────────────────────────────────────────────────────
 
     Status:
       type: object
-      required: [uptime_s, fps, db_rows, db_size_bytes, stream_port, capturing]
+      required: [id, location, capturing, uptime_s, fps, detections, tracks,
+                 db_mb, sse_clients]
       properties:
+        id:
+          type: string
+          description: Trap identifier
+          example: trap_001
+        location:
+          type: string
+          description: Trap location
         capturing:
           type: boolean
           description: Whether detection is currently active
+        sessionId:
+          type: string
+          nullable: true
+          description: Active capture session ID, or null if not capturing
+          example: "20260314_153042"
         uptime_s:
           type: integer
           description: Seconds since process start
@@ -283,126 +386,147 @@ components:
           type: number
           format: float
           description: Current capture framerate
-        db_rows:
+        detections:
           type: integer
           format: int64
           description: Total detection rows in database
-        db_size_bytes:
+        tracks:
           type: integer
           format: int64
-        stream_port:
+          description: Total unique tracks in database
+        db_mb:
+          type: number
+          format: double
+          description: Database file size in megabytes
+        sse_clients:
           type: integer
-          description: Port of the MJPEG stream
-        model:
+          description: Number of currently connected SSE clients
+
+    # ── Crops ──────────────────────────────────────────────────────────────────
+
+    CropItem:
+      type: object
+      required: [file, bytes, trackId, conf, timestampUs, label, session]
+      properties:
+        file:
           type: string
-          description: Model filename in use
+          description: >
+            Session-relative path used as the DB key and as the tail of the
+            GET /api/crops/{path} URL.
+            Format is either "filename.jpg" (legacy) or
+            "sessionId/filename.jpg".
+          example: "20260314_153042/insect_42.jpg"
+        bytes:
+          type: integer
+          format: int64
+          description: JPEG file size in bytes
+        trackId:
+          type: integer
+          description: ByteTracker track ID
+        conf:
+          type: number
+          format: float
+          description: Detection confidence at time of save
+        timestampUs:
+          type: integer
+          format: int64
+          description: Unix timestamp of the frame in microseconds
+        label:
+          type: string
+          description: Class label string
+          example: moth
+        session:
+          type: string
+          description: Capture session ID that produced this crop
+          example: "20260314_153042"
 
-    # ── Config ─────────────────────────────────────────────────────────────────
+    # ── Sync ───────────────────────────────────────────────────────────────────
 
-    Config:
+    SyncSessionOpened:
       type: object
+      required: [sessionId, pending]
       properties:
-        detection:
-          type: object
-          properties:
-            conf_threshold:
-              type: number
-              format: float
-            nms_threshold:
-              type: number
-              format: float
-        tracker:
-          type: object
-          properties:
-            high_threshold:
-              type: number
-              format: float
-            low_threshold:
-              type: number
-              format: float
-            iou_threshold:
-              type: number
-              format: float
-            min_hits:
-              type: integer
-            max_missed:
-              type: integer
+        sessionId:
+          type: string
+          description: Opaque session token to use in subsequent sync calls
+          example: "sess_20260314_153042"
+        pending:
+          type: integer
+          format: int64
+          description: Number of crop files not yet acknowledged
+
+    SyncManifest:
+      type: object
+      required: [sessionId, pending, crops]
+      properties:
+        sessionId:
+          type: string
+        pending:
+          type: integer
+          format: int64
         crops:
-          type: object
-          properties:
-            min_confidence:
-              type: number
-              format: float
-            jpeg_quality:
-              type: integer
-        stream:
-          type: object
-          properties:
-            jpeg_quality:
-              type: integer
+          type: array
+          items:
+            $ref: "#/components/schemas/SyncCropEntry"
 
-    # ── Detection ──────────────────────────────────────────────────────────────
-
-    Detection:
+    SyncCropEntry:
       type: object
-      required: [frame_id, timestamp_us, track_id, class_id, label,
-                 x1, y1, x2, y2, confidence, frame_width, frame_height]
+      required: [file, bytes, trackId, label, conf, timestampUs]
       properties:
-        frame_id:
+        file:
+          type: string
+          description: Path relative to crops dir, used in GET /api/crops/{path}
+          example: "20260314_153042/insect_42.jpg"
+        bytes:
           type: integer
           format: int64
-        timestamp_us:
-          type: integer
-          format: int64
-          description: Unix timestamp in microseconds
-        track_id:
-          type: integer
-        class_id:
+        trackId:
           type: integer
         label:
           type: string
-        x1:
+        conf:
           type: number
           format: float
-        y1:
-          type: number
-          format: float
-        x2:
-          type: number
-          format: float
-        y2:
-          type: number
-          format: float
-        confidence:
-          type: number
-          format: float
-        frame_width:
-          type: integer
-        frame_height:
-          type: integer
-
-    DetectionPage:
-      type: object
-      required: [total, offset, limit, items]
-      properties:
-        total:
+        timestampUs:
           type: integer
           format: int64
-          description: Total matching rows (for pagination)
-        offset:
-          type: integer
-        limit:
-          type: integer
-        items:
+
+    SyncAck:
+      type: object
+      required: [sessionId, files]
+      properties:
+        sessionId:
+          type: string
+          description: Sync session ID returned by POST /api/sync/session
+        files:
           type: array
+          description: List of file paths that were successfully received
           items:
-            $ref: "#/components/schemas/Detection"
+            type: string
+          example: ["20260314_153042/insect_42.jpg", "20260314_153042/insect_43.jpg"]
+
+    SyncDeleteResult:
+      type: object
+      required: [deleted, bytesFreed, notFound]
+      properties:
+        deleted:
+          type: integer
+          format: int64
+          description: Number of files deleted from disk
+        bytesFreed:
+          type: integer
+          format: int64
+          description: Total bytes freed
+        notFound:
+          type: integer
+          format: int64
+          description: Files that were already gone from disk
 
     # ── Error ──────────────────────────────────────────────────────────────────
 
     Error:
       type: object
-      required: [message]
+      required: [error]
       properties:
-        message:
+        error:
           type: string
